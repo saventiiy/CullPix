@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.saventiy.cullpix"
-        minSdk = 24
+        minSdk = 25
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -54,8 +54,12 @@ android {
 dependencies {
     //LINK https://stackoverflow.com/questions/78332368/getting-issue-dependency-was-found-while-adding-dagger-hilt
     implementation(libs.hilt.android)
+    implementation(libs.androidx.compose.material)
     ksp(libs.hilt.compiler)
 
+    implementation(libs.hilt.navigation.compose)
+
+    implementation("io.coil-kt:coil-compose:2.7.0")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
