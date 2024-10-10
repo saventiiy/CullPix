@@ -1,76 +1,69 @@
 package com.saventiy.cullpix.views
 
-import android.app.PendingIntent
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.saventiy.cullpix.repository.impl.Photo
-import com.saventiy.cullpix.repository.impl.PhotoDeletionException
-import com.saventiy.cullpix.usecases.DeletePhotoUseCase
-import com.saventiy.cullpix.usecases.GetPhotosUseCase
+import com.saventiy.cullpix.usecases.DeleteMediaFileUseCase
+import com.saventiy.cullpix.usecases.LoadMediaFilesUseCase
+import com.saventiy.cullpix.views.state.MediaIntent
+import com.saventiy.cullpix.views.state.MediaState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
 
 @HiltViewModel
 class PhotoViewModel @Inject constructor(
-    private val getPhotosUseCase: GetPhotosUseCase,
-    private val deletePhotoUseCase: DeletePhotoUseCase
+    private val loadMediaFilesUseCase: LoadMediaFilesUseCase,
+    private val deleteMediaFileUseCase: DeleteMediaFileUseCase,
+    private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(PhotoState())
-    val state: StateFlow<PhotoState> = _state.asStateFlow()
+    companion object {
+        private const val DIRECTORY_PATH_KEY = "DIRECTORY_PATH_KEY"
+    }
+
+    private val _state = MutableStateFlow(MediaState())
+    val state: StateFlow<MediaState> = _state.asStateFlow()
 
     init {
-        loadPhotos()
-    }
-
-    private fun loadPhotos() {
-        viewModelScope.launch {
-            getPhotosUseCase().collect { photos ->
-                _state.update { it.copy(photos = photos) }
-            }
+        savedStateHandle.get<String>(DIRECTORY_PATH_KEY)?.let { directoryPath ->
+            loadMediaFiles(directoryPath)
         }
     }
 
-    fun onIntent(intent: PhotoIntent) {
+    fun onIntent(intent: MediaIntent) {
         when (intent) {
-            is PhotoIntent.DeletePhoto -> deletePhoto(intent.photo)
-            is PhotoIntent.KeepPhoto -> keepPhoto(intent.photo)
+            is MediaIntent.DeleteMediaFile -> deleteMediaFile(intent.mediaFile)
         }
     }
 
-    private fun deletePhoto(photo: Photo) {
+    fun setDirectoryUri(directoryPath: String) {
+        savedStateHandle[DIRECTORY_PATH_KEY] = directoryPath
+        loadMediaFiles(directoryPath)
+    }
+
+    private fun loadMediaFiles(directoryPath: String) {
         viewModelScope.launch {
-            try {
-                deletePhotoUseCase(photo)
-                _state.update {
-                    it.copy(photos = it.photos.filter { p -> p.id != photo.id })
+            withContext(Dispatchers.IO) {
+                loadMediaFilesUseCase.invoke(directoryPath).collect() { media ->
+                    _state.update { it.copy(mediaFiles = media) }
                 }
-            } catch (e: PhotoDeletionException) {
-                _state.update { it.copy(deletionPendingIntent = e.pendingIntent) }
-            } catch (e: Exception) {
-                _state.update { it.copy(error = e.message) }
             }
         }
     }
 
-    private fun keepPhoto(photo: Photo) {
-        // In this case, we don't need to do anything as we're just keeping the photo
-        // You could add some logic here if needed, like marking the photo as "favorite"
+    private fun deleteMediaFile(media: File) {
+        viewModelScope.launch {
+            deleteMediaFileUseCase.invoke(media).collect() { result ->
+                _state.update { it.copy(mediaFiles = it.mediaFiles.filter { it.exists() }) }
+            }
+        }
     }
-}
-
-data class PhotoState(
-    val photos: List<Photo> = emptyList(),
-    val error: String? = null,
-    val deletionPendingIntent: PendingIntent? = null
-)
-
-sealed class PhotoIntent {
-    data class DeletePhoto(val photo: Photo) : PhotoIntent()
-    data class KeepPhoto(val photo: Photo) : PhotoIntent()
 }
